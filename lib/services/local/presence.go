@@ -17,6 +17,7 @@ limitations under the License.
 package local
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"sort"
@@ -79,6 +80,9 @@ func (s *PresenceService) GetNamespaces() ([]services.Namespace, error) {
 	}
 	out := make([]services.Namespace, len(result.Items))
 	for i, item := range result.Items {
+		if !bytes.HasSuffix(item.Key, []byte(paramsPrefix)) {
+			continue
+		}
 		ns, err := services.UnmarshalNamespace(item.Value, services.WithResourceID(item.ID))
 		if err != nil {
 			return nil, trace.Wrap(err)

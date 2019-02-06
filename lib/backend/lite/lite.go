@@ -149,7 +149,7 @@ func NewWithConfig(ctx context.Context, cfg Config) (*LiteBackend, error) {
 		watchStarted:     watchStarted,
 		signalWatchStart: signalWatchStart,
 	}
-	l.Debugf("Connected to: %v", connectorURL)
+	l.Debugf("Connected to: %v, poll stream period: %v", connectorURL, cfg.PollStreamPeriod)
 	if err := l.createSchema(); err != nil {
 		return nil, trace.Wrap(err, "error creating schema: %v", fullPath)
 	}

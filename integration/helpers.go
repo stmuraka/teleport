@@ -67,7 +67,6 @@ import (
 // work faster but consuming more CPU (useful for integration testing)
 func SetTestTimeouts(t time.Duration) {
 	defaults.ReverseTunnelAgentHeartbeatPeriod = t
-	defaults.ServerAnnounceTTL = t
 	defaults.ServerKeepAliveTTL = t
 	defaults.SessionRefreshPeriod = t
 	defaults.HeartbeatCheckPeriod = t
