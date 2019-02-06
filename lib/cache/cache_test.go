@@ -304,6 +304,12 @@ func (s *CacheSuite) TestPreferRecent(c *check.C) {
 	// wait for watcher to restart
 	select {
 	case event := <-p.eventsC:
+		c.Assert(event.Type, check.Equals, WatcherFailed)
+	case <-time.After(time.Second):
+		c.Fatalf("timeout waiting for event")
+	}
+	select {
+	case event := <-p.eventsC:
 		c.Assert(event.Type, check.Equals, WatcherStarted)
 	case <-time.After(time.Second):
 		c.Fatalf("timeout waiting for event")

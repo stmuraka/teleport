@@ -505,7 +505,7 @@ func (i *TeleInstance) GenerateConfig(trustedSecrets []*InstanceSecrets, tconf *
 	tconf.AuthServers = append(tconf.AuthServers, tconf.Auth.SSHAddr)
 	tconf.Auth.StorageConfig = backend.Config{
 		Type:   lite.GetName(),
-		Params: backend.Params{"path": dataDir + string(os.PathListSeparator) + defaults.BackendDir},
+		Params: backend.Params{"path": dataDir + string(os.PathListSeparator) + defaults.BackendDir, "poll_stream_period": 50 * time.Millisecond},
 	}
 
 	tconf.Keygen = testauthority.New()

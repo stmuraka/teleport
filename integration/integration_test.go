@@ -1259,7 +1259,7 @@ func (s *IntSuite) TestMapRoles(c *check.C) {
 	c.Assert(err, check.IsNil)
 	err = aux.Process.GetAuthServer().UpsertRole(role)
 	c.Assert(err, check.IsNil)
-	trustedClusterToken := "trusted-clsuter-token"
+	trustedClusterToken := "trusted-cluster-token"
 	err = main.Process.GetAuthServer().UpsertToken(
 		services.MustCreateProvisionToken(trustedClusterToken, []teleport.Role{teleport.RoleTrustedCluster}, time.Time{}))
 	c.Assert(err, check.IsNil)
@@ -1285,6 +1285,12 @@ func (s *IntSuite) TestMapRoles(c *check.C) {
 		if err != nil {
 			if trace.IsConnectionProblem(err) {
 				log.Debugf("retrying on connection problem: %v", err)
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			if trace.IsAccessDenied(err) {
+				log.Debugf("retrying on access denied: %v", err)
+				time.Sleep(500 * time.Millisecond)
 				continue
 			}
 			c.Fatalf("got non connection problem %v", err)

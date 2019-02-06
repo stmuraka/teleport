@@ -118,6 +118,9 @@ const (
 	// ComponentTunClient is a tunnel client
 	ComponentTunClient = "client:tunnel"
 
+	// ComponentCache is a cache component
+	ComponentCache = "cache"
+
 	// ComponentCachingClient is a caching auth client
 	ComponentCachingClient = "client:cache"
 

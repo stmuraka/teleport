@@ -146,6 +146,8 @@ type Config struct {
 	// Clock can be set to control time,
 	// uses runtime clock by default
 	Clock clockwork.Clock
+	// Component is a component used in logs
+	Component string
 }
 
 // OnlyRecent defines cache behavior always
@@ -207,6 +209,9 @@ func (c *Config) CheckAndSetDefaults() error {
 	if c.ReloadPeriod == 0 {
 		c.ReloadPeriod = defaults.LowResPollingPeriod
 	}
+	if c.Component == "" {
+		c.Component = teleport.ComponentCache
+	}
 	return nil
 }
 
@@ -247,7 +252,7 @@ func New(config Config) (*Cache, error) {
 		accessCache:        local.NewAccessService(wrapper),
 		presenceCache:      local.NewPresenceService(wrapper),
 		Entry: log.WithFields(log.Fields{
-			trace.Component: teleport.ComponentCachingClient,
+			trace.Component: config.Component,
 		}),
 	}
 	collections, err := setupCollections(cs, config.Watches)
@@ -280,16 +285,15 @@ func (c *Cache) update() {
 	r := time.NewTicker(c.ReloadPeriod)
 	defer r.Stop()
 	for {
-		select {
-		case <-t.C:
-		case <-r.C:
-		case <-c.ctx.Done():
-			return
-		}
-		err := c.fetchAndWatch()
+		err := c.fetchAndWatch(r.C)
 		if err != nil {
 			c.setCacheState(err)
 			c.Warningf("Re-init the cache on error: %v.", err)
+		}
+		select {
+		case <-t.C:
+		case <-c.ctx.Done():
+			return
 		}
 	}
 }
@@ -372,7 +376,7 @@ func (c *Cache) notify(event CacheEvent) {
 //   we assume that this cache will eventually end up in a correct state
 //   potentially lagging behind the state of the database.
 //
-func (c *Cache) fetchAndWatch() error {
+func (c *Cache) fetchAndWatch(reloadC <-chan time.Time) error {
 	watcher, err := c.Events.NewWatcher(c.ctx, services.Watch{Kinds: c.watchKinds()})
 	if err != nil {
 		c.notify(CacheEvent{Type: WatcherFailed})
@@ -399,6 +403,9 @@ func (c *Cache) fetchAndWatch() error {
 			return trace.Wrap(watcher.Error())
 		}
 		return trace.ConnectionProblem(nil, "unexpected watcher close")
+	case <-reloadC:
+		c.Debugf("Triggering scheduled reload.")
+		return nil
 	case <-c.ctx.Done():
 		return trace.ConnectionProblem(c.ctx.Err(), "context is closing")
 	case event := <-watcher.Events():
@@ -419,6 +426,9 @@ func (c *Cache) fetchAndWatch() error {
 				return trace.Wrap(watcher.Error())
 			}
 			return trace.ConnectionProblem(nil, "unexpected watcher close")
+		case <-reloadC:
+			c.Debugf("Triggering scheduled reload.")
+			return nil
 		case <-c.ctx.Done():
 			return trace.ConnectionProblem(c.ctx.Err(), "context is closing")
 		case event := <-watcher.Events():

@@ -119,7 +119,6 @@ func (s *ClusterConfigurationService) SetStaticTokens(c services.StaticTokens) e
 	if err != nil {
 		return trace.Wrap(err)
 	}
-
 	_, err = s.Put(context.TODO(), backend.Item{
 		Key:     backend.Key(clusterConfigPrefix, staticTokensPrefix),
 		Value:   value,

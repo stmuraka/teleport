@@ -958,7 +958,7 @@ func (process *TeleportProcess) initAuthService() error {
 
 	var authCache auth.AuthCache
 	if !process.Config.CachePolicy.Enabled {
-		cache, err := process.newAccessCache(authServer.AuthServices, cache.ForAuth, []string{"auth"})
+		cache, err := process.newAccessCache(authServer.AuthServices, cache.ForAuth, []string{teleport.ComponentAuth})
 		if err != nil {
 			return trace.Wrap(err)
 		}
@@ -1174,6 +1174,7 @@ func (process *TeleportProcess) newAccessCache(clt services.Services, setupConfi
 		Users:         clt,
 		Access:        clt,
 		Presence:      clt,
+		Component:     teleport.Component(append(cacheName, teleport.ComponentCache)...),
 		PreferRecent: cache.PreferRecent{
 			NeverExpires: process.Config.CachePolicy.NeverExpires,
 			MaxTTL:       process.Config.CachePolicy.TTL,
@@ -1248,7 +1249,7 @@ func (process *TeleportProcess) initSSH() error {
 			return trace.Wrap(err)
 		}
 
-		authClient, err := process.newLocalCache(conn.Client, cache.ForNode, []string{"node"})
+		authClient, err := process.newLocalCache(conn.Client, cache.ForNode, []string{teleport.ComponentNode})
 		if err != nil {
 			return trace.Wrap(err)
 		}
@@ -1735,7 +1736,7 @@ func (process *TeleportProcess) initProxyEndpoint(conn *Connector) error {
 	}
 
 	// make a caching auth client for the auth server:
-	accessPoint, err := process.newLocalCacheForProxy(conn.Client, []string{"proxy"})
+	accessPoint, err := process.newLocalCacheForProxy(conn.Client, []string{teleport.ComponentProxy})
 	if err != nil {
 		return trace.Wrap(err)
 	}
