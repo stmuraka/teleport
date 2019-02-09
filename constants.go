@@ -78,6 +78,9 @@ const (
 	// ComponentProcess is a main control process
 	ComponentProcess = "proc"
 
+	// ComponentServer is a server subcomponent of some services
+	ComponentServer = "server"
+
 	// ComponentReverseTunnelServer is reverse tunnel server
 	// that together with agent establish a bi-directional SSH revers tunnel
 	// to bypass firewall restrictions

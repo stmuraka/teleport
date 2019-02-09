@@ -1,5 +1,5 @@
 /*
-Copyright 2018 Gravitational, Inc.
+Copyright 2018-2019 Gravitational, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -77,12 +77,17 @@ type Config struct {
 	Sync string `json:"sync,omitempty"`
 	// BusyTimeout sets busy timeout in milliseconds
 	BusyTimeout int `json:"busy_timeout,omitempty"`
+	// Memory turns memory mode of the database
+	Memory bool `json:"memory"`
+	// MemoryName set the name of the database,
+	// set to "sqlite.db" by default
+	MemoryName string `json:"memory_name"`
 }
 
 // CheckAndSetDefaults is a helper returns an error if the supplied configuration
 // is not enough to connect to sqlite
 func (cfg *Config) CheckAndSetDefaults() error {
-	if cfg.Path == "" {
+	if cfg.Path == "" && !cfg.Memory {
 		return trace.BadParameter("specify directory path to the database using 'path' parameter")
 	}
 	if cfg.BufferSize == 0 {
@@ -99,6 +104,9 @@ func (cfg *Config) CheckAndSetDefaults() error {
 	}
 	if cfg.BusyTimeout == 0 {
 		cfg.BusyTimeout = busyTimeout
+	}
+	if cfg.MemoryName == "" {
+		cfg.MemoryName = defaultDBFile
 	}
 	return nil
 }
@@ -119,16 +127,22 @@ func NewWithConfig(ctx context.Context, cfg Config) (*LiteBackend, error) {
 	if err := cfg.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
 	}
-	// Ensure that the path to the root directory exists.
-	err := os.MkdirAll(cfg.Path, defaultDirMode)
-	if err != nil {
-		return nil, trace.ConvertSystemError(err)
+	var connectorURL string
+	if !cfg.Memory {
+		// Ensure that the path to the root directory exists.
+		err := os.MkdirAll(cfg.Path, defaultDirMode)
+		if err != nil {
+			return nil, trace.ConvertSystemError(err)
+		}
+		fullPath := filepath.Join(cfg.Path, defaultDBFile)
+		connectorURL = fmt.Sprintf("file:%v?_busy_timeout=%v&_sync=%v", fullPath, cfg.BusyTimeout, cfg.Sync)
+	} else {
+		connectorURL = fmt.Sprintf("file:%v?mode=memory&cache=shared", cfg.MemoryName)
+		connectorURL = fmt.Sprintf("file:%v?mode=memory", cfg.MemoryName)
 	}
-	fullPath := filepath.Join(cfg.Path, defaultDBFile)
-	connectorURL := fmt.Sprintf("file:%v?_busy_timeout=%v&_sync=%v", fullPath, cfg.BusyTimeout, cfg.Sync)
 	db, err := sql.Open(BackendName, connectorURL)
 	if err != nil {
-		return nil, trace.Wrap(err, "error opening URI: %v", fullPath)
+		return nil, trace.Wrap(err, "error opening URI: %v", connectorURL)
 	}
 	// serialize access to sqlite to avoid database is locked errors
 	db.SetMaxOpenConns(1)
@@ -151,7 +165,7 @@ func NewWithConfig(ctx context.Context, cfg Config) (*LiteBackend, error) {
 	}
 	l.Debugf("Connected to: %v, poll stream period: %v", connectorURL, cfg.PollStreamPeriod)
 	if err := l.createSchema(); err != nil {
-		return nil, trace.Wrap(err, "error creating schema: %v", fullPath)
+		return nil, trace.Wrap(err, "error creating schema: %v", connectorURL)
 	}
 	if err := l.showPragmas(); err != nil {
 		l.Warningf("Failed to show pragma settings: %v.", err)

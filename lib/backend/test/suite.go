@@ -28,7 +28,7 @@ import (
 	"github.com/gravitational/teleport/lib/backend"
 	"github.com/gravitational/teleport/lib/fixtures"
 
-	//	"github.com/gravitational/trace"
+	"github.com/gravitational/trace"
 	"github.com/pborman/uuid"
 	"gopkg.in/check.v1"
 )
@@ -38,7 +38,10 @@ var _ = fmt.Printf
 func TestBackend(t *testing.T) { check.TestingT(t) }
 
 type BackendSuite struct {
-	B          backend.Backend
+	B backend.Backend
+	// B2 is a backend opened to the same database,
+	// used for concurrent operations tests
+	B2         backend.Backend
 	NewBackend func() (backend.Backend, error)
 }
 
@@ -494,6 +497,78 @@ func (s *BackendSuite) Locking(c *check.C) {
 	c.Assert(backend.ReleaseLock(ctx, s.B, tok1), check.IsNil)
 	err = backend.ReleaseLock(ctx, s.B, tok1)
 	fixtures.ExpectNotFound(c, err)
+}
+
+// ConcurrentOperations tests concurrent operations on the same
+// shared backend
+func (s *BackendSuite) ConcurrentOperations(c *check.C) {
+	l := s.B
+	c.Assert(l, check.NotNil)
+	l2 := s.B2
+	c.Assert(l2, check.NotNil)
+
+	prefix := MakePrefix()
+	ctx := context.TODO()
+	value1 := "this first value should not be corrupted by concurrent ops"
+	value2 := "this second value should not be corrupted too"
+	const attempts = 50
+	resultsC := make(chan struct{}, attempts*4)
+	for i := 0; i < attempts; i++ {
+		go func(cnt int) {
+			_, err := l.Put(ctx, backend.Item{Key: prefix("key"), Value: []byte(value1)})
+			resultsC <- struct{}{}
+			c.Assert(err, check.IsNil)
+		}(i)
+
+		go func(cnt int) {
+			_, err := l2.CompareAndSwap(ctx,
+				backend.Item{Key: prefix("key"), Value: []byte(value2)},
+				backend.Item{Key: prefix("key"), Value: []byte(value1)})
+			resultsC <- struct{}{}
+			if err != nil && !trace.IsCompareFailed(err) {
+				c.Assert(err, check.IsNil)
+			}
+		}(i)
+
+		go func(cnt int) {
+			_, err := l2.Create(ctx, backend.Item{Key: prefix("key"), Value: []byte(value2)})
+			resultsC <- struct{}{}
+			if err != nil && !trace.IsAlreadyExists(err) {
+				c.Assert(err, check.IsNil)
+			}
+		}(i)
+
+		go func(cnt int) {
+			item, err := l.Get(ctx, prefix("key"))
+			resultsC <- struct{}{}
+			if err != nil && !trace.IsNotFound(err) {
+				c.Assert(err, check.IsNil)
+			}
+			// make sure data is not corrupted along the way
+			if err == nil {
+				val := string(item.Value)
+				if val != value1 && val != value2 {
+					c.Fatalf("expected one of %q or %q and got %q", value1, value2, val)
+				}
+			}
+		}(i)
+
+		go func(cnt int) {
+			err := l2.Delete(ctx, prefix("key"))
+			if err != nil && !trace.IsNotFound(err) {
+				c.Assert(err, check.IsNil)
+			}
+			resultsC <- struct{}{}
+		}(i)
+	}
+	timeoutC := time.After(3 * time.Second)
+	for i := 0; i < attempts*5; i++ {
+		select {
+		case <-resultsC:
+		case <-timeoutC:
+			c.Fatalf("timeout waiting for goroutines to finish")
+		}
+	}
 }
 
 // MakePrefix returns function that appends unique prefix

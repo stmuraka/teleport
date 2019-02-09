@@ -662,6 +662,7 @@ func (process *TeleportProcess) rotate(conn *Connector, localState auth.StateV2,
 			if err != nil {
 				return nil, trace.Wrap(err)
 			}
+			process.Debugf("Re-registered, received new identity %v.", identity)
 			err = writeStateAndIdentity(auth.IdentityReplacement, identity)
 			if err != nil {
 				return nil, trace.Wrap(err)

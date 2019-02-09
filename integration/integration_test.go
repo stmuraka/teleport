@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2018 Gravitational, Inc.
+Copyright 2016-2019 Gravitational, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -1278,28 +1278,7 @@ func (s *IntSuite) TestMapRoles(c *check.C) {
 	c.Assert(err, check.IsNil)
 
 	// try and upsert a trusted cluster
-	var upsertSuccess bool
-	for i := 0; i < 10; i++ {
-		log.Debugf("Will create trusted cluster %v, attempt %v", trustedCluster, i)
-		_, err = aux.Process.GetAuthServer().UpsertTrustedCluster(trustedCluster)
-		if err != nil {
-			if trace.IsConnectionProblem(err) {
-				log.Debugf("retrying on connection problem: %v", err)
-				time.Sleep(500 * time.Millisecond)
-				continue
-			}
-			if trace.IsAccessDenied(err) {
-				log.Debugf("retrying on access denied: %v", err)
-				time.Sleep(500 * time.Millisecond)
-				continue
-			}
-			c.Fatalf("got non connection problem %v", err)
-		}
-		upsertSuccess = true
-		break
-	}
-	// make sure we upsert a trusted cluster
-	c.Assert(upsertSuccess, check.Equals, true)
+	tryCreateTrustedCluster(c, aux.Process.GetAuthServer(), trustedCluster)
 
 	nodePorts := s.getPorts(3)
 	sshPort, proxyWebPort, proxySSHPort := nodePorts[0], nodePorts[1], nodePorts[2]
@@ -1426,6 +1405,31 @@ func (s *IntSuite) TestMapRoles(c *check.C) {
 	c.Assert(aux.Stop(true), check.IsNil)
 }
 
+// tryCreateTrustedCluster performs several attempts to create a trusted cluster,
+// retries on connection problems and access denied errors to let caches
+// propagate and services to start
+func tryCreateTrustedCluster(c *check.C, authServer *auth.AuthServer, trustedCluster services.TrustedCluster) {
+	for i := 0; i < 10; i++ {
+		log.Debugf("Will create trusted cluster %v, attempt %v.", trustedCluster, i)
+		_, err := authServer.UpsertTrustedCluster(trustedCluster)
+		if err == nil {
+			return
+		}
+		if trace.IsConnectionProblem(err) {
+			log.Debugf("Retrying on connection problem: %v.", err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		if trace.IsAccessDenied(err) {
+			log.Debugf("Retrying on access denied: %v.", err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		c.Fatalf("Terminating on unexpected problem %v.", err)
+	}
+	c.Fatalf("Timeout creating trusted cluster")
+}
+
 // TestTrustedClusters tests remote clusters scenarios
 // using trusted clusters feature
 func (s *IntSuite) TestTrustedClusters(c *check.C) {
@@ -1485,7 +1489,7 @@ func (s *IntSuite) trustedClusters(c *check.C, multiplex bool) {
 	c.Assert(err, check.IsNil)
 	err = aux.Process.GetAuthServer().UpsertRole(role)
 	c.Assert(err, check.IsNil)
-	trustedClusterToken := "trusted-clsuter-token"
+	trustedClusterToken := "trusted-cluster-token"
 	err = main.Process.GetAuthServer().UpsertToken(
 		services.MustCreateProvisionToken(trustedClusterToken, []teleport.Role{teleport.RoleTrustedCluster}, time.Time{}))
 	c.Assert(err, check.IsNil)
@@ -1504,22 +1508,7 @@ func (s *IntSuite) trustedClusters(c *check.C, multiplex bool) {
 	c.Assert(err, check.IsNil)
 
 	// try and upsert a trusted cluster
-	var upsertSuccess bool
-	for i := 0; i < 10; i++ {
-		log.Debugf("Will create trusted cluster %v, attempt %v", trustedCluster, i)
-		_, err = aux.Process.GetAuthServer().UpsertTrustedCluster(trustedCluster)
-		if err != nil {
-			if trace.IsConnectionProblem(err) {
-				log.Debugf("retrying on connection problem: %v", err)
-				continue
-			}
-			c.Fatalf("got non connection problem %v", err)
-		}
-		upsertSuccess = true
-		break
-	}
-	// make sure we upsert a trusted cluster
-	c.Assert(upsertSuccess, check.Equals, true)
+	tryCreateTrustedCluster(c, aux.Process.GetAuthServer(), trustedCluster)
 
 	nodePorts := s.getPorts(3)
 	sshPort, proxyWebPort, proxySSHPort := nodePorts[0], nodePorts[1], nodePorts[2]
@@ -2298,6 +2287,10 @@ func (s *IntSuite) rotateSuccess(c *check.C) {
 	})
 	c.Assert(err, check.IsNil)
 
+	hostCA, err := svc.GetAuthServer().GetCertAuthority(services.CertAuthID{Type: services.HostCA, DomainName: Site}, false)
+	c.Assert(err, check.IsNil)
+	l.Debugf("Cert authority: %v", auth.CertAuthorityInfo(hostCA))
+
 	// wait until service phase update to be broadcasted (init phase does not trigger reload)
 	err = waitForProcessEvent(svc, service.TeleportPhaseChangeEvent, 10*time.Second)
 	c.Assert(err, check.IsNil)
@@ -2334,6 +2327,10 @@ func (s *IntSuite) rotateSuccess(c *check.C) {
 	})
 	c.Assert(err, check.IsNil)
 
+	hostCA, err = svc.GetAuthServer().GetCertAuthority(services.CertAuthID{Type: services.HostCA, DomainName: Site}, false)
+	c.Assert(err, check.IsNil)
+	l.Debugf("Cert authority: %v", auth.CertAuthorityInfo(hostCA))
+
 	// wait until service reloaded
 	svc, err = waitForReload(serviceC, svc)
 	c.Assert(err, check.IsNil)
@@ -2357,6 +2354,10 @@ func (s *IntSuite) rotateSuccess(c *check.C) {
 		Mode:        services.RotationModeManual,
 	})
 	c.Assert(err, check.IsNil)
+
+	hostCA, err = svc.GetAuthServer().GetCertAuthority(services.CertAuthID{Type: services.HostCA, DomainName: Site}, false)
+	c.Assert(err, check.IsNil)
+	l.Debugf("Cert authority: %v", auth.CertAuthorityInfo(hostCA))
 
 	// wait until service reloaded
 	svc, err = waitForReload(serviceC, svc)
@@ -2607,22 +2608,8 @@ func (s *IntSuite) rotateTrustedClusters(c *check.C) {
 	// try and upsert a trusted cluster
 	lib.SetInsecureDevMode(true)
 	defer lib.SetInsecureDevMode(false)
-	var upsertSuccess bool
-	for i := 0; i < 10; i++ {
-		log.Debugf("Will create trusted cluster %v, attempt %v", trustedCluster, i)
-		_, err = aux.Process.GetAuthServer().UpsertTrustedCluster(trustedCluster)
-		if err != nil {
-			if trace.IsConnectionProblem(err) {
-				log.Debugf("retrying on connection problem: %v", err)
-				continue
-			}
-			c.Fatalf("got non connection problem %v", err)
-		}
-		upsertSuccess = true
-		break
-	}
-	// make sure we upsert a trusted cluster
-	c.Assert(upsertSuccess, check.Equals, true)
+
+	tryCreateTrustedCluster(c, aux.Process.GetAuthServer(), trustedCluster)
 
 	// capture credentials before has reload started to simulate old client
 	initialCreds, err := GenerateUserCreds(svc, s.me.Username)

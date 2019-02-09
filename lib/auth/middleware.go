@@ -29,9 +29,9 @@ import (
 	"github.com/gravitational/teleport/lib/tlsca"
 	"github.com/gravitational/teleport/lib/utils"
 
-	"golang.org/x/net/http2"
-
 	"github.com/gravitational/trace"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/net/http2"
 )
 
 // TLSServerConfig is a configuration for TLS server
@@ -69,6 +69,9 @@ func (c *TLSServerConfig) CheckAndSetDefaults() error {
 	if c.AccessPoint == nil {
 		return trace.BadParameter("missing parameter AccessPoint")
 	}
+	if c.Component == "" {
+		c.Component = teleport.ComponentAuth
+	}
 	return nil
 }
 
@@ -77,6 +80,8 @@ type TLSServer struct {
 	*http.Server
 	// TLSServerConfig is TLS server configuration used for auth server
 	TLSServerConfig
+	// Entry is TLS server logging entry
+	*logrus.Entry
 }
 
 // NewTLSServer returns new unstarted TLS server
@@ -109,6 +114,9 @@ func NewTLSServer(cfg TLSServerConfig) (*TLSServer, error) {
 		Server: &http.Server{
 			Handler: limiter,
 		},
+		Entry: logrus.WithFields(logrus.Fields{
+			trace.Component: cfg.Component,
+		}),
 	}
 	server.TLS.GetConfigForClient = server.GetConfigForClient
 	return server, nil
@@ -129,7 +137,7 @@ func (t *TLSServer) GetConfigForClient(info *tls.ClientHelloInfo) (*tls.Config, 
 		clusterName, err = DecodeClusterName(info.ServerName)
 		if err != nil {
 			if !trace.IsNotFound(err) {
-				log.Warningf("Client sent unsupported cluster name %q, what resulted in error %v.", info.ServerName, err)
+				t.Warningf("Client sent unsupported cluster name %q, what resulted in error %v.", info.ServerName, err)
 				return nil, trace.AccessDenied("access is denied")
 			}
 		}
@@ -141,12 +149,19 @@ func (t *TLSServer) GetConfigForClient(info *tls.ClientHelloInfo) (*tls.Config, 
 	// that are not trusted
 	pool, err := ClientCertPool(t.AccessPoint, clusterName)
 	if err != nil {
-		log.Errorf("failed to retrieve client pool: %v", trace.DebugReport(err))
+		var ourClusterName string
+		if clusterName, err := t.AccessPoint.GetClusterName(); err == nil {
+			ourClusterName = clusterName.GetClusterName()
+		}
+		t.Errorf("Failed to retrieve client pool. Client cluster %v, target cluster %v, error:  %v.", clusterName, ourClusterName, trace.DebugReport(err))
 		// this falls back to the default config
 		return nil, nil
 	}
 	tlsCopy := t.TLS.Clone()
 	tlsCopy.ClientCAs = pool
+	for _, cert := range tlsCopy.Certificates {
+		t.Debugf("Server certificate %v.", TLSCertInfo(&cert))
+	}
 	return tlsCopy, nil
 }
 
@@ -332,6 +347,7 @@ func ClientCertPool(client AccessCache, clusterName string) (*x509.CertPool, err
 			if err != nil {
 				return nil, trace.Wrap(err)
 			}
+			log.Debugf("ClientCertPool -> %v", CertInfo(cert))
 			pool.AddCert(cert)
 		}
 	}

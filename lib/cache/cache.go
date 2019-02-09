@@ -485,7 +485,12 @@ func (c *Cache) processEvent(event services.Event) error {
 // GetCertAuthority returns certificate authority by given id. Parameter loadSigningKeys
 // controls if signing keys are loaded
 func (c *Cache) GetCertAuthority(id services.CertAuthID, loadSigningKeys bool, opts ...services.MarshalOption) (services.CertAuthority, error) {
-	return c.trustCache.GetCertAuthority(id, loadSigningKeys, opts...)
+	ca, err := c.trustCache.GetCertAuthority(id, loadSigningKeys, opts...)
+	if err != nil {
+		cas, _ := c.trustCache.GetCertAuthorities(id.Type, loadSigningKeys, opts...)
+		c.Debugf("CACHE CONENTS CA: %v, %v", cas, err)
+	}
+	return ca, err
 }
 
 // GetCertAuthorities returns a list of authorities of a given type
@@ -516,6 +521,10 @@ func (c *Cache) GetClusterConfig(opts ...services.MarshalOption) (services.Clust
 
 // GetClusterName gets the name of the cluster from the backend.
 func (c *Cache) GetClusterName(opts ...services.MarshalOption) (services.ClusterName, error) {
+	re, err := c.clusterConfigCache.GetClusterName(opts...)
+	if err != nil {
+		c.Debugf("CACHE CONENTS CLUSTERNAME: %v %v", re, err)
+	}
 	return c.clusterConfigCache.GetClusterName(opts...)
 }
 

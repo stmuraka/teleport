@@ -172,6 +172,9 @@ type Config struct {
 	// PollingPeriod specifies polling period for internal sync
 	// goroutines, used to speed up sync-ups in tests.
 	PollingPeriod time.Duration
+
+	// Component is a component used in logs
+	Component string
 }
 
 // CheckAndSetDefaults checks parameters and sets default values
@@ -207,6 +210,9 @@ func (cfg *Config) CheckAndSetDefaults() error {
 	if cfg.Clock == nil {
 		cfg.Clock = clockwork.NewRealClock()
 	}
+	if cfg.Component == "" {
+		cfg.Component = teleport.Component(teleport.ComponentProxy, teleport.ComponentServer)
+	}
 	return nil
 }
 
@@ -229,7 +235,7 @@ func NewServer(cfg Config) (Server, error) {
 		cancel:           cancel,
 		clusterPeers:     make(map[string]*clusterPeers),
 		Entry: log.WithFields(log.Fields{
-			trace.Component: teleport.ComponentReverseTunnelServer,
+			trace.Component: cfg.Component,
 		}),
 	}
 

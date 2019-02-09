@@ -1,5 +1,5 @@
 /*
-Copyright 2015-2018 Gravitational, Inc.
+Copyright 2015-2019 Gravitational, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -958,7 +958,7 @@ func (process *TeleportProcess) initAuthService() error {
 
 	var authCache auth.AuthCache
 	if !process.Config.CachePolicy.Enabled {
-		cache, err := process.newAccessCache(authServer.AuthServices, cache.ForAuth, []string{teleport.ComponentAuth})
+		cache, err := process.newAccessCache(authServer.AuthServices, cache.ForAuth, []string{teleport.ComponentAuth}, true)
 		if err != nil {
 			return trace.Wrap(err)
 		}
@@ -1155,12 +1155,12 @@ func (process *TeleportProcess) onExit(serviceName string, callback func(interfa
 }
 
 // newAccessCache returns new local cache access point
-func (process *TeleportProcess) newAccessCache(clt services.Services, setupConfig cache.SetupConfigFn, cacheName []string) (*cache.Cache, error) {
+func (process *TeleportProcess) newAccessCache(clt services.Services, setupConfig cache.SetupConfigFn, cacheName []string, memory bool) (*cache.Cache, error) {
 	path := filepath.Join(append([]string{process.Config.DataDir, "cache"}, cacheName...)...)
 	if err := os.MkdirAll(path, teleport.SharedDirMode); err != nil {
 		return nil, trace.ConvertSystemError(err)
 	}
-	cacheBackend, err := lite.NewWithConfig(process.ExitContext(), lite.Config{Path: path, EventsOff: true})
+	cacheBackend, err := lite.NewWithConfig(process.ExitContext(), lite.Config{Path: path, EventsOff: true, Memory: memory})
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -1174,7 +1174,7 @@ func (process *TeleportProcess) newAccessCache(clt services.Services, setupConfi
 		Users:         clt,
 		Access:        clt,
 		Presence:      clt,
-		Component:     teleport.Component(append(cacheName, teleport.ComponentCache)...),
+		Component:     teleport.Component(append(cacheName, process.id, teleport.ComponentCache)...),
 		PreferRecent: cache.PreferRecent{
 			NeverExpires: process.Config.CachePolicy.NeverExpires,
 			MaxTTL:       process.Config.CachePolicy.TTL,
@@ -1193,7 +1193,7 @@ func (process *TeleportProcess) newLocalCache(clt auth.ClientI, setupConfig cach
 	if !process.Config.CachePolicy.Enabled {
 		return clt, nil
 	}
-	cache, err := process.newAccessCache(clt, setupConfig, cacheName)
+	cache, err := process.newAccessCache(clt, setupConfig, cacheName, false)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -1774,6 +1774,7 @@ func (process *TeleportProcess) initProxyEndpoint(conn *Connector) error {
 	if !process.Config.Proxy.DisableReverseTunnel {
 		tsrv, err = reversetunnel.NewServer(
 			reversetunnel.Config{
+				Component:             teleport.Component(teleport.ComponentProxy, process.id),
 				ID:                    process.Config.HostUUID,
 				ClusterName:           conn.ServerIdentity.Cert.Extensions[utils.CertExtensionAuthority],
 				ClientTLS:             clientTLSConfig,

@@ -547,6 +547,34 @@ func (i *Identity) String() string {
 	return fmt.Sprintf("Identity(%v, %v)", i.ID.Role, strings.Join(out, ","))
 }
 
+// CertInfo returns diagnostic information about certificate
+func CertInfo(cert *x509.Certificate) string {
+	return fmt.Sprintf("cert(%v issued by %v:%v)", cert.Subject.CommonName, cert.Issuer.CommonName, cert.Issuer.SerialNumber)
+}
+
+// TLSCertInfo returns diagnostic information about certificate
+func TLSCertInfo(cert *tls.Certificate) string {
+	x509cert, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return err.Error()
+	}
+	return CertInfo(x509cert)
+}
+
+// CertAuthorityInfo returns debugging information about certificate authority
+func CertAuthorityInfo(ca services.CertAuthority) string {
+	var out []string
+	for _, keyPair := range ca.GetTLSKeyPairs() {
+		cert, err := tlsca.ParseCertificatePEM(keyPair.Cert)
+		if err != nil {
+			out = append(out, err.Error())
+		} else {
+			out = append(out, fmt.Sprintf("trust root(%v:%v)", cert.Subject.CommonName, cert.Subject.SerialNumber))
+		}
+	}
+	return fmt.Sprintf("cert authority(state: %v, phase: %v, roots: %v)", ca.GetRotation().State, ca.GetRotation().Phase, strings.Join(out, ", "))
+}
+
 // HasTSLConfig returns true if this identity has TLS certificate and private key
 func (i *Identity) HasTLSConfig() bool {
 	return len(i.TLSCACertsBytes) != 0 && len(i.TLSCertBytes) != 0
